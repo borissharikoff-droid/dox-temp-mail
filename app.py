@@ -1,12 +1,14 @@
 """Flask app with Telegram webhook and mail checker."""
 import asyncio
 import logging
+import random
 import threading
 import time
 from queue import Queue
 
 from flask import Flask, request, jsonify
 from telegram import Update
+from telegram.error import RetryAfter
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
 
 import config
@@ -102,11 +104,24 @@ def init_bot():
 
     if config.WEBHOOK_URL:
         webhook_url = f"{config.WEBHOOK_URL}/webhook"
-        _run_async(application.bot.set_webhook(
-            url=webhook_url,
-            secret_token=config.WEBHOOK_SECRET,
-        ))
-        logger.info("Webhook set: %s", webhook_url)
+        # Stagger set_webhook to avoid Telegram flood when multiple workers start
+        time.sleep(random.uniform(0, 2))
+        for attempt in range(3):
+            try:
+                _run_async(application.bot.set_webhook(
+                    url=webhook_url,
+                    secret_token=config.WEBHOOK_SECRET,
+                ))
+                logger.info("Webhook set: %s", webhook_url)
+                break
+            except RetryAfter as e:
+                if attempt < 2:
+                    delay = e.retry_after + 0.5
+                    logger.warning("Telegram flood limit, retry in %.0fs", delay)
+                    time.sleep(delay)
+                else:
+                    logger.exception("Webhook set failed after retries: %s", e)
+                    raise
     else:
         logger.warning("WEBHOOK_URL not set - webhook mode disabled")
 
