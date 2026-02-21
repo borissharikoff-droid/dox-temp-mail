@@ -1,6 +1,8 @@
 """Flask app with Telegram webhook and mail checker."""
 import asyncio
 import logging
+import threading
+import time
 from queue import Queue
 
 from flask import Flask, request, jsonify
@@ -36,6 +38,24 @@ app = Flask(__name__)
 tg_application: Application | None = None
 message_queue: Queue | None = None
 
+# Persistent event loop for PTB (avoids "Event loop is closed" when mixing sync Flask with async PTB)
+_ptb_loop: asyncio.AbstractEventLoop | None = None
+_ptb_loop_thread: threading.Thread | None = None
+
+
+def _run_ptb_loop():
+    """Run event loop in background thread."""
+    global _ptb_loop
+    _ptb_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(_ptb_loop)
+    _ptb_loop.run_forever()
+
+
+def _run_async(coro):
+    """Run coroutine on the persistent PTB event loop (blocks until done)."""
+    future = asyncio.run_coroutine_threadsafe(coro, _ptb_loop)
+    return future.result()
+
 
 def build_application() -> Application:
     """Build Telegram Application with handlers."""
@@ -56,15 +76,21 @@ def build_application() -> Application:
 
 def init_bot():
     """Initialize bot, webhook, job queue, and mail checker."""
-    global tg_application, message_queue
+    global tg_application, message_queue, _ptb_loop_thread
 
     db.init_db()
+
+    # Start persistent event loop for PTB (must run before any async PTB calls)
+    _ptb_loop_thread = threading.Thread(target=_run_ptb_loop, daemon=True)
+    _ptb_loop_thread.start()
+    # Give the loop time to start
+    time.sleep(0.1)
 
     tg_application = build_application()
     application = tg_application
 
     # Initialize PTB Application (required before process_update)
-    asyncio.run(application.initialize())
+    _run_async(application.initialize())
 
     # Queue for background worker -> Telegram
     message_queue = Queue()
@@ -81,7 +107,7 @@ def init_bot():
     # Set webhook
     if config.WEBHOOK_URL:
         webhook_url = f"{config.WEBHOOK_URL}/webhook"
-        asyncio.run(application.bot.set_webhook(url=webhook_url))
+        _run_async(application.bot.set_webhook(url=webhook_url))
         logger.info("Webhook set: %s", webhook_url)
     else:
         logger.warning("WEBHOOK_URL not set - webhook mode disabled")
@@ -101,7 +127,7 @@ def webhook():
     try:
         data = request.get_json()
         update = Update.de_json(data, tg_application.bot)
-        asyncio.run(tg_application.process_update(update))
+        _run_async(tg_application.process_update(update))
         return jsonify({"ok": True})
     except Exception as e:
         logger.exception("Webhook error: %s", e)
