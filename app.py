@@ -98,7 +98,7 @@ def webhook():
     try:
         data = request.get_json()
         update = Update.de_json(data, tg_application.bot)
-        tg_application.process_update(update)
+        asyncio.run(tg_application.process_update(update))
         return jsonify({"ok": True})
     except Exception as e:
         logger.exception("Webhook error: %s", e)
