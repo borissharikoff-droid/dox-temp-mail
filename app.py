@@ -63,6 +63,9 @@ def init_bot():
     tg_application = build_application()
     application = tg_application
 
+    # Initialize PTB Application (required before process_update)
+    asyncio.run(application.initialize())
+
     # Queue for background worker -> Telegram
     message_queue = Queue()
 
