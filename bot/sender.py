@@ -14,10 +14,9 @@ TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 
 
 def _format_message(parsed: dict) -> str:
-    """Format parsed email for Telegram."""
     lines = [
-        f"📧 **От:** {parsed.get('from_addr', '')}",
-        f"**Тема:** {parsed.get('subject', '(без темы)')}",
+        f"📧 *От:* {parsed.get('from_addr', '')}",
+        f"*Тема:* {parsed.get('subject', '(без темы)')}",
         "",
     ]
     if parsed.get("intro"):
@@ -28,7 +27,7 @@ def _format_message(parsed: dict) -> str:
 
     if parsed.get("codes"):
         lines.append("")
-        lines.append("**Коды:** " + ", ".join(parsed["codes"]))
+        lines.append("*Коды:* " + ", ".join(f"`{c}`" for c in parsed["codes"]))
 
     return "\n".join(lines)
 

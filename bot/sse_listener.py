@@ -1,20 +1,39 @@
-"""Background mail checker: polling for new messages (SSE optional, polling is reliable)."""
+"""Background mail checker: concurrent polling with expired-session filtering."""
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
 
 from bot.mail_service import get_messages, get_message_detail
 from bot.message_parser import parse_message
 import db
-from config import POLL_INTERVAL
+from config import POLL_INTERVAL, SESSION_MAX_AGE_SECONDS, MAX_CONCURRENT_POLLS
 
 logger = logging.getLogger(__name__)
 
+_CLEANUP_EVERY_N_CYCLES = 10
+
+
+def _is_expired(created_at: str) -> bool:
+    try:
+        dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - dt).total_seconds() > SESSION_MAX_AGE_SECONDS
+    except Exception:
+        return True
+
+
+def _adaptive_interval(session_count: int) -> float:
+    if session_count < 100:
+        return POLL_INTERVAL
+    if session_count < 300:
+        return max(POLL_INTERVAL, 45)
+    return 60
+
 
 def _check_new_messages(user_id: str, token: str, on_new) -> bool:
-    """
-    Fetch messages, find unseen ones, send to callback. Returns True if any new.
-    """
     try:
         messages = get_messages(token)
     except Exception as e:
@@ -38,24 +57,44 @@ def _check_new_messages(user_id: str, token: str, on_new) -> bool:
 
 
 def run_mail_checker(on_new_message):
-    """
-    Background thread: poll each session for new messages.
-    on_new_message(user_id, msg_id, parsed)
-    """
     def worker():
+        cycle = 0
         while True:
+            cycle += 1
             sessions = db.get_all_sessions()
-            for session in sessions:
-                try:
-                    _check_new_messages(
-                        session["user_id"],
-                        session["token"],
+            active = [s for s in sessions if not _is_expired(s["created_at"])]
+
+            if cycle % _CLEANUP_EVERY_N_CYCLES == 0:
+                db.cleanup_expired_sessions()
+                db.cleanup_old_messages()
+
+            if not active:
+                time.sleep(POLL_INTERVAL)
+                continue
+
+            logger.info("Polling %d active sessions (skipped %d expired)",
+                        len(active), len(sessions) - len(active))
+
+            with ThreadPoolExecutor(max_workers=min(MAX_CONCURRENT_POLLS, len(active))) as pool:
+                futures = {
+                    pool.submit(
+                        _check_new_messages,
+                        s["user_id"],
+                        s["token"],
                         on_new_message,
-                    )
-                except Exception as e:
-                    logger.exception("Error checking account: %s", e)
-            time.sleep(POLL_INTERVAL)
+                    ): s["user_id"]
+                    for s in active
+                }
+                for fut in as_completed(futures):
+                    try:
+                        fut.result()
+                    except Exception as e:
+                        logger.warning("Poll error for %s: %s", futures[fut], e)
+
+            interval = _adaptive_interval(len(active))
+            time.sleep(interval)
 
     t = threading.Thread(target=worker, daemon=True)
     t.start()
-    logger.info("Mail checker thread started (poll interval: %ds)", POLL_INTERVAL)
+    logger.info("Mail checker thread started (poll interval: %ds, max workers: %d)",
+                POLL_INTERVAL, MAX_CONCURRENT_POLLS)

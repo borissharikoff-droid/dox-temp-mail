@@ -1,7 +1,9 @@
 """SQLite database for sessions and seen messages."""
 import sqlite3
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+from config import SESSION_MAX_AGE_SECONDS
 
 DB_PATH = Path(__file__).parent / "data" / "bot.db"
 
@@ -12,13 +14,13 @@ def _ensure_db_dir():
 
 def get_connection():
     _ensure_db_dir()
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = sqlite3.connect(str(DB_PATH), timeout=10)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 
 def init_db():
-    """Create tables if they don't exist."""
     conn = get_connection()
     try:
         conn.executescript("""
@@ -31,24 +33,33 @@ def init_db():
             );
 
             CREATE TABLE IF NOT EXISTS messages_seen (
-                message_id TEXT PRIMARY KEY
+                message_id TEXT PRIMARY KEY,
+                seen_at TEXT NOT NULL DEFAULT ''
             );
         """)
         conn.commit()
+        _migrate(conn)
+        cleanup_expired_sessions(conn)
+        cleanup_old_messages(conn)
     finally:
         conn.close()
 
 
+def _migrate(conn: sqlite3.Connection):
+    """Add seen_at column if missing (migration from older schema)."""
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(messages_seen)").fetchall()]
+    if "seen_at" not in cols:
+        conn.execute("ALTER TABLE messages_seen ADD COLUMN seen_at TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+
+
 def save_session(user_id: str, email: str, token: str, account_id: str):
-    """Save or replace user session."""
     conn = get_connection()
     try:
         conn.execute(
-            """
-            INSERT OR REPLACE INTO sessions (user_id, email, token, account_id, created_at)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (user_id, email, token, account_id, datetime.utcnow().isoformat()),
+            "INSERT OR REPLACE INTO sessions (user_id, email, token, account_id, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (user_id, email, token, account_id, datetime.now(timezone.utc).isoformat()),
         )
         conn.commit()
     finally:
@@ -56,22 +67,18 @@ def save_session(user_id: str, email: str, token: str, account_id: str):
 
 
 def get_session(user_id: str) -> dict | None:
-    """Get session by user_id."""
     conn = get_connection()
     try:
         row = conn.execute(
             "SELECT user_id, email, token, account_id, created_at FROM sessions WHERE user_id = ?",
             (user_id,),
         ).fetchone()
-        if row is None:
-            return None
-        return dict(row)
+        return dict(row) if row else None
     finally:
         conn.close()
 
 
 def delete_session(user_id: str):
-    """Delete user session."""
     conn = get_connection()
     try:
         conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
@@ -81,7 +88,6 @@ def delete_session(user_id: str):
 
 
 def is_message_seen(message_id: str) -> bool:
-    """Check if message was already sent to user."""
     conn = get_connection()
     try:
         row = conn.execute(
@@ -94,12 +100,11 @@ def is_message_seen(message_id: str) -> bool:
 
 
 def mark_message_seen(message_id: str):
-    """Mark message as seen."""
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT OR IGNORE INTO messages_seen (message_id) VALUES (?)",
-            (message_id,),
+            "INSERT OR IGNORE INTO messages_seen (message_id, seen_at) VALUES (?, ?)",
+            (message_id, datetime.now(timezone.utc).isoformat()),
         )
         conn.commit()
     finally:
@@ -107,7 +112,6 @@ def mark_message_seen(message_id: str):
 
 
 def get_all_sessions() -> list[dict]:
-    """Get all active sessions (for SSE/polling)."""
     conn = get_connection()
     try:
         rows = conn.execute(
@@ -116,3 +120,43 @@ def get_all_sessions() -> list[dict]:
         return [dict(r) for r in rows]
     finally:
         conn.close()
+
+
+# ── Cleanup ────────────────────────────────────────────────────────
+
+def cleanup_expired_sessions(conn: sqlite3.Connection | None = None):
+    """Delete sessions older than SESSION_MAX_AGE_SECONDS."""
+    own = conn is None
+    if own:
+        conn = get_connection()
+    try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=SESSION_MAX_AGE_SECONDS)).isoformat()
+        deleted = conn.execute(
+            "DELETE FROM sessions WHERE created_at < ?", (cutoff,)
+        ).rowcount
+        conn.commit()
+        if deleted:
+            from logging import getLogger
+            getLogger(__name__).info("Cleaned up %d expired sessions", deleted)
+    finally:
+        if own:
+            conn.close()
+
+
+def cleanup_old_messages(conn: sqlite3.Connection | None = None, days: int = 7):
+    """Delete seen-message records older than `days` days."""
+    own = conn is None
+    if own:
+        conn = get_connection()
+    try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        deleted = conn.execute(
+            "DELETE FROM messages_seen WHERE seen_at != '' AND seen_at < ?", (cutoff,)
+        ).rowcount
+        conn.commit()
+        if deleted:
+            from logging import getLogger
+            getLogger(__name__).info("Cleaned up %d old message records", deleted)
+    finally:
+        if own:
+            conn.close()
