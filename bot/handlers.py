@@ -8,7 +8,7 @@ from telegram.ext import ContextTypes
 import db
 from config import SESSION_MAX_AGE_SECONDS
 from bot.mail_service import create_account, get_messages, get_message_detail
-from bot.message_parser import parse_message
+from bot.message_parser import get_button_label, parse_message
 
 logger = logging.getLogger(__name__)
 
@@ -194,8 +194,9 @@ async def _send_message_to_user(context: ContextTypes.DEFAULT_TYPE, user_id: str
     text = "\n".join(lines)
 
     buttons = []
+    url_labels = parsed.get("url_labels") or {}
     for url in parsed.get("urls", [])[:5]:
-        label = "Открыть ссылку" if len(url) > 30 else url[:30] + "..."
+        label = get_button_label(url, url_labels.get(url))
         buttons.append([InlineKeyboardButton(label, url=url)])
 
     reply_markup = InlineKeyboardMarkup(buttons) if buttons else None

@@ -6,6 +6,8 @@ import time
 
 import requests
 
+from bot.message_parser import get_button_label
+
 logger = logging.getLogger(__name__)
 
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
@@ -31,13 +33,13 @@ def _format_message(parsed: dict) -> str:
     return "\n".join(lines)
 
 
-def _build_reply_markup(urls: list[str]) -> dict | None:
-    """Build inline keyboard for URLs."""
+def _build_reply_markup(urls: list[str], url_labels: dict | None = None) -> dict | None:
+    """Build inline keyboard for URLs with smart labels (Activate, Verify, etc.)."""
     if not urls:
         return None
     buttons = []
     for url in urls[:5]:
-        label = "Открыть ссылку" if len(url) > 30 else (url[:30] + "..." if len(url) > 30 else url)
+        label = get_button_label(url, (url_labels or {}).get(url))
         buttons.append([{"text": label, "url": url}])
     return {"inline_keyboard": buttons}
 
@@ -45,7 +47,7 @@ def _build_reply_markup(urls: list[str]) -> dict | None:
 def send_message_sync(token: str, chat_id: str, parsed: dict) -> bool:
     """Send formatted message to Telegram (sync, for background thread)."""
     text = _format_message(parsed)
-    reply_markup = _build_reply_markup(parsed.get("urls", []))
+    reply_markup = _build_reply_markup(parsed.get("urls", []), parsed.get("url_labels"))
 
     payload = {
         "chat_id": chat_id,
