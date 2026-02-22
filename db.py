@@ -36,6 +36,11 @@ def init_db():
                 message_id TEXT PRIMARY KEY,
                 seen_at TEXT NOT NULL DEFAULT ''
             );
+
+            CREATE TABLE IF NOT EXISTS ui_state (
+                user_id TEXT PRIMARY KEY,
+                last_message_id INTEGER NOT NULL
+            );
         """)
         conn.commit()
         _migrate(conn)
@@ -118,6 +123,39 @@ def get_all_sessions() -> list[dict]:
             "SELECT user_id, email, token, account_id, created_at FROM sessions"
         ).fetchall()
         return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_last_ui_message_id(user_id: str) -> int | None:
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT last_message_id FROM ui_state WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        return int(row["last_message_id"]) if row else None
+    finally:
+        conn.close()
+
+
+def set_last_ui_message_id(user_id: str, message_id: int):
+    conn = get_connection()
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO ui_state (user_id, last_message_id) VALUES (?, ?)",
+            (user_id, int(message_id)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def clear_last_ui_message_id(user_id: str):
+    conn = get_connection()
+    try:
+        conn.execute("DELETE FROM ui_state WHERE user_id = ?", (user_id,))
+        conn.commit()
     finally:
         conn.close()
 

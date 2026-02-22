@@ -35,6 +35,19 @@ GIF_DEFAULT_URL = os.environ.get(
     "GIF_DEFAULT_URL",
     "https://media.giphy.com/media/ICOgUNjpvO0PC/giphy.gif",
 )
+GIF_URLS = {
+    "start": os.environ.get("GIF_START_URL", "https://media.giphy.com/media/ICOgUNjpvO0PC/giphy.gif"),
+    "create_success": os.environ.get("GIF_CREATE_SUCCESS_URL", "https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif"),
+    "create_error": os.environ.get("GIF_CREATE_ERROR_URL", "https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif"),
+    "refresh": os.environ.get("GIF_REFRESH_URL", "https://media.giphy.com/media/26ufdipQqU2lhNA4g/giphy.gif"),
+    "no_mail": os.environ.get("GIF_NO_MAIL_URL", "https://media.giphy.com/media/3oriO0OEd9QIDdllqo/giphy.gif"),
+    "new_mail": os.environ.get("GIF_NEW_MAIL_URL", "https://media.giphy.com/media/5GoVLqeAOo6PK/giphy.gif"),
+    "expired": os.environ.get("GIF_EXPIRED_URL", "https://media.giphy.com/media/fAnEC88LccN7a/giphy.gif"),
+    "rate_limited": os.environ.get("GIF_RATE_LIMITED_URL", "https://media.giphy.com/media/26xBI73gWquCBBCDe/giphy.gif"),
+    "delete_success": os.environ.get("GIF_DELETE_SUCCESS_URL", "https://media.giphy.com/media/10hO3rDNqqg2Xe/giphy.gif"),
+    "generic_error": os.environ.get("GIF_GENERIC_ERROR_URL", "https://media.giphy.com/media/3o7btPCcdNniyf0ArS/giphy.gif"),
+    "my_mail": os.environ.get("GIF_MY_MAIL_URL", "https://media.giphy.com/media/l0HlGdXFWYbKv5rby/giphy.gif"),
+}
 GIF_FILE_IDS = {
     "start": os.environ.get("GIF_START_FILE_ID", ""),
     "create_success": os.environ.get("GIF_CREATE_SUCCESS_FILE_ID", ""),

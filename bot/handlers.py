@@ -21,14 +21,10 @@ CB_NEW_MAIL = "new_mail"
 CB_DELETE_MAIL = "delete_mail"
 
 HELP_TEXT = (
-    "Это бот для временной почты 😎\n\n"
-    "Что умеет:\n"
-    "• <b>📬 Создать почту</b> — сделать временный ящик\n"
-    "• <b>📫 Мой ящик</b> — показать текущий адрес и сколько он еще живет\n"
-    "• <b>🔄 Проверить</b> — посмотреть входящие\n"
-    "• <b>🗑 Удалить почту</b> — удалить текущую почту\n\n"
-    "<blockquote>Когда не хочется оставлять основную почту на каждом сайте, временный ящик очень выручает.</blockquote>\n"
-    "Ящик живет около часа, потом можно создать новый."
+    "<b>Бот для временной почты 😎</b>\n\n"
+    "Когда не хочется оставлять основную почту на каждом сайте, временный ящик очень выручает.\n\n"
+    "<blockquote>Ящик живет около часа, потом можно создать новый.</blockquote>\n\n"
+    "@Dox_Services"
 )
 
 
@@ -92,15 +88,59 @@ def _keyboard_for_user(user_id: str) -> InlineKeyboardMarkup:
     return _kb_active()
 
 
+async def _safe_delete_message(bot, chat_id: str | int, message_id: int | None):
+    if not message_id:
+        return
+    try:
+        await bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except Exception:
+        pass
+
+
+async def _send_page(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: str,
+    tag: str,
+    text: str,
+    reply_markup=None,
+    parse_mode: str = "HTML",
+):
+    """Keep one active UI message: delete previous and send a new one."""
+    chat_id = update.effective_chat.id
+    previous_id = db.get_last_ui_message_id(user_id)
+    current_cb_msg_id = (
+        update.callback_query.message.message_id
+        if update.callback_query and update.callback_query.message
+        else None
+    )
+
+    await _safe_delete_message(context.bot, chat_id, previous_id)
+    if current_cb_msg_id and current_cb_msg_id != previous_id:
+        await _safe_delete_message(context.bot, chat_id, current_cb_msg_id)
+
+    msg = await send_message_with_gif(
+        context.bot,
+        chat_id,
+        tag,
+        text,
+        reply_markup=reply_markup,
+        parse_mode=parse_mode,
+    )
+    if msg and getattr(msg, "message_id", None):
+        db.set_last_ui_message_id(user_id, msg.message_id)
+
+
 async def _rate_check(update: Update, context: ContextTypes.DEFAULT_TYPE, action: str) -> bool:
     """Return True if request is throttled (caller should return early)."""
     user_id = str(update.effective_user.id)
     if is_allowed(user_id, action):
         return False
 
-    await send_message_with_gif(
-        context.bot,
-        update.effective_chat.id,
+    await _send_page(
+        update,
+        context,
+        user_id,
         "rate_limited",
         "Немного быстрее, чем нужно 🙂\n\n<blockquote>Подожди пару секунд и попробуй снова.</blockquote>",
     )
@@ -116,11 +156,12 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await _rate_check(update, context, "general"):
         return
     user_id = str(update.effective_user.id)
-    await send_message_with_gif(
-        context.bot,
+    await _send_page(
+        update,
+        context,
         user_id,
         "start",
-        "Привет!\n\n" + HELP_TEXT,
+        HELP_TEXT,
         reply_markup=_keyboard_for_user(user_id),
     )
 
@@ -129,8 +170,9 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await _rate_check(update, context, "general"):
         return
     user_id = str(update.effective_user.id)
-    await send_message_with_gif(
-        context.bot,
+    await _send_page(
+        update,
+        context,
         user_id,
         "start",
         HELP_TEXT,
@@ -148,8 +190,9 @@ async def callback_create_mail(update: Update, context: ContextTypes.DEFAULT_TYP
     try:
         email, token, account_id = create_account()
         db.save_session(user_id, email, token, account_id)
-        await send_message_with_gif(
-            context.bot,
+        await _send_page(
+            update,
+            context,
             user_id,
             "create_success",
             f"Готово, держи адрес:\n<code>{email}</code>\n\n"
@@ -158,8 +201,9 @@ async def callback_create_mail(update: Update, context: ContextTypes.DEFAULT_TYP
         )
     except Exception as e:
         logger.exception("create_account failed: %s", e)
-        await send_message_with_gif(
-            context.bot,
+        await _send_page(
+            update,
+            context,
             user_id,
             "create_error",
             "Не получилось создать ящик с первого раза.\n\n"
@@ -177,8 +221,9 @@ async def callback_my_mail(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     session = db.get_session(user_id)
     if not session:
-        await send_message_with_gif(
-            context.bot,
+        await _send_page(
+            update,
+            context,
             user_id,
             "no_mail",
             "Пока нет активной почты.\n\n<blockquote>Нажми «📬 Создать почту», и всё будет готово.</blockquote>",
@@ -187,8 +232,9 @@ async def callback_my_mail(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if _is_session_expired(session["created_at"]):
-        await send_message_with_gif(
-            context.bot,
+        await _send_page(
+            update,
+            context,
             user_id,
             "expired",
             "Срок жизни этой почты закончился.\n\n<blockquote>Можно сразу создать новый ящик.</blockquote>",
@@ -197,10 +243,11 @@ async def callback_my_mail(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     ttl = _remaining_ttl(session["created_at"])
-    await send_message_with_gif(
-        context.bot,
+    await _send_page(
+        update,
+        context,
         user_id,
-        "start",
+        "my_mail",
         f"Твой ящик:\n<code>{session['email']}</code>\n\n"
         f"<blockquote>Осталось жить: {ttl}</blockquote>",
         reply_markup=_kb_active(),
@@ -216,8 +263,9 @@ async def callback_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     session = db.get_session(user_id)
     if not session:
-        await send_message_with_gif(
-            context.bot,
+        await _send_page(
+            update,
+            context,
             user_id,
             "no_mail",
             "Сначала нужен активный ящик.\n\n<blockquote>Нажми «📬 Создать почту».</blockquote>",
@@ -226,8 +274,9 @@ async def callback_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if _is_session_expired(session["created_at"]):
-        await send_message_with_gif(
-            context.bot,
+        await _send_page(
+            update,
+            context,
             user_id,
             "expired",
             "Эта почта уже завершилась по времени.\n\n<blockquote>Создадим новую?</blockquote>",
@@ -248,16 +297,18 @@ async def callback_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 new_count += 1
 
         if new_count == 0:
-            await send_message_with_gif(
-                context.bot,
+            await _send_page(
+                update,
+                context,
                 user_id,
                 "no_mail",
                 "Пока новых писем нет.\n\n<blockquote>Можно проверить снова чуть позже.</blockquote>",
                 reply_markup=_kb_active(),
             )
         else:
-            await send_message_with_gif(
-                context.bot,
+            await _send_page(
+                update,
+                context,
                 user_id,
                 "new_mail",
                 f"Новых писем: <b>{new_count}</b>.\n\n<blockquote>Проверь, возможно там код подтверждения.</blockquote>",
@@ -266,8 +317,9 @@ async def callback_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
     except Exception as e:
         logger.exception("refresh failed: %s", e)
-        await send_message_with_gif(
-            context.bot,
+        await _send_page(
+            update,
+            context,
             user_id,
             "generic_error",
             "Не получилось проверить входящие.\n\n<blockquote>Попробуй ещё раз через минуту.</blockquote>",
@@ -288,8 +340,9 @@ async def callback_delete_mail(update: Update, context: ContextTypes.DEFAULT_TYP
 
     session = db.get_session(user_id)
     if not session:
-        await send_message_with_gif(
-            context.bot,
+        await _send_page(
+            update,
+            context,
             user_id,
             "no_mail",
             "Сейчас активной почты нет, удалять нечего.",
@@ -298,8 +351,9 @@ async def callback_delete_mail(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     db.delete_session(user_id)
-    await send_message_with_gif(
-        context.bot,
+    await _send_page(
+        update,
+        context,
         user_id,
         "delete_success",
         "Готово, почта удалена.\n\n<blockquote>Если понадобится, быстро создадим новую.</blockquote>",

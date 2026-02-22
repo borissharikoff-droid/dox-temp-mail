@@ -3,7 +3,7 @@ import logging
 
 import requests
 
-from config import GIF_DEFAULT_FILE_ID, GIF_DEFAULT_URL, GIF_FILE_IDS
+from config import GIF_DEFAULT_FILE_ID, GIF_DEFAULT_URL, GIF_FILE_IDS, GIF_URLS
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +13,12 @@ TELEGRAM_MESSAGE_API = "https://api.telegram.org/bot{token}/sendMessage"
 
 def pick_gif(tag: str) -> str:
     """Pick animation reference for a tag, fallback to file_id or URL."""
-    return GIF_FILE_IDS.get(tag) or GIF_DEFAULT_FILE_ID or GIF_DEFAULT_URL
+    return (
+        GIF_FILE_IDS.get(tag)
+        or GIF_DEFAULT_FILE_ID
+        or GIF_URLS.get(tag)
+        or GIF_DEFAULT_URL
+    )
 
 
 async def send_gif(bot, chat_id: str | int, tag: str) -> bool:
@@ -60,7 +65,7 @@ async def send_message_with_gif(
     text: str,
     reply_markup=None,
     parse_mode: str = "HTML",
-) -> bool:
+) -> object | None:
     """
     Send one combined message: GIF + caption.
     Falls back to plain text message if GIF can't be sent.
@@ -68,27 +73,27 @@ async def send_message_with_gif(
     file_id = pick_gif(tag)
     if file_id:
         try:
-            await bot.send_animation(
+            msg = await bot.send_animation(
                 chat_id=chat_id,
                 animation=file_id,
                 caption=text,
                 parse_mode=parse_mode,
                 reply_markup=reply_markup,
             )
-            return True
+            return msg
         except Exception as e:
             logger.warning("send_message_with_gif animation failed (tag=%s): %s", tag, e)
     try:
-        await bot.send_message(
+        msg = await bot.send_message(
             chat_id=chat_id,
             text=text,
             parse_mode=parse_mode,
             reply_markup=reply_markup,
         )
-        return True
+        return msg
     except Exception as e:
         logger.warning("send_message_with_gif fallback text failed (tag=%s): %s", tag, e)
-        return False
+        return None
 
 
 def send_message_with_gif_sync(
