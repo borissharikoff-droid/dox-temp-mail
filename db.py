@@ -116,6 +116,33 @@ def mark_message_seen(message_id: str):
         conn.close()
 
 
+def claim_message_seen(message_id: str) -> bool:
+    """
+    Atomically claim a message for processing.
+    Returns True only for the first caller.
+    """
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO messages_seen (message_id, seen_at) VALUES (?, ?)",
+            (message_id, datetime.now(timezone.utc).isoformat()),
+        )
+        conn.commit()
+        return cur.rowcount == 1
+    finally:
+        conn.close()
+
+
+def unmark_message_seen(message_id: str):
+    """Remove seen marker (used when processing failed after claim)."""
+    conn = get_connection()
+    try:
+        conn.execute("DELETE FROM messages_seen WHERE message_id = ?", (message_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def get_all_sessions() -> list[dict]:
     conn = get_connection()
     try:

@@ -21,11 +21,13 @@ from bot.handlers import (
     callback_refresh,
     callback_new_mail,
     callback_delete_mail,
+    callback_home,
     CB_CREATE_MAIL,
     CB_MY_MAIL,
     CB_REFRESH,
     CB_NEW_MAIL,
     CB_DELETE_MAIL,
+    CB_HOME,
 )
 from bot.sse_listener import run_mail_checker
 from bot.sender import run_sender_thread
@@ -76,6 +78,7 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(callback_refresh, pattern=CB_REFRESH))
     application.add_handler(CallbackQueryHandler(callback_new_mail, pattern=CB_NEW_MAIL))
     application.add_handler(CallbackQueryHandler(callback_delete_mail, pattern=CB_DELETE_MAIL))
+    application.add_handler(CallbackQueryHandler(callback_home, pattern=CB_HOME))
 
     return application
 

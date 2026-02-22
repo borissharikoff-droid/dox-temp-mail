@@ -14,7 +14,7 @@ MAIL_TM_MERCURE = "https://mercure.mail.tm/.well-known/mercure"
 SESSION_MAX_AGE_SECONDS = 3600
 
 # Polling
-POLL_INTERVAL = 45
+POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", 15))
 MAX_CONCURRENT_POLLS = 10
 
 # Retry config for Mail.tm API

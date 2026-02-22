@@ -19,6 +19,7 @@ CB_MY_MAIL = "my_mail"
 CB_REFRESH = "refresh"
 CB_NEW_MAIL = "new_mail"
 CB_DELETE_MAIL = "delete_mail"
+CB_HOME = "home"
 
 HELP_TEXT = (
     "<b>Бот для временной почты 😎</b>\n\n"
@@ -31,6 +32,7 @@ HELP_TEXT = (
 def _kb_no_mail() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📬 Создать почту", callback_data=CB_CREATE_MAIL)],
+        [InlineKeyboardButton("🏠 Домой", callback_data=CB_HOME)],
     ])
 
 
@@ -41,12 +43,14 @@ def _kb_active() -> InlineKeyboardMarkup:
             InlineKeyboardButton("🔄 Проверить", callback_data=CB_REFRESH),
         ],
         [InlineKeyboardButton("🗑 Удалить почту", callback_data=CB_DELETE_MAIL)],
+        [InlineKeyboardButton("🏠 Домой", callback_data=CB_HOME)],
     ])
 
 
 def _kb_expired() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("♻️ Новый ящик", callback_data=CB_NEW_MAIL)],
+        [InlineKeyboardButton("🏠 Домой", callback_data=CB_HOME)],
     ])
 
 
@@ -289,12 +293,16 @@ async def callback_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE):
         new_count = 0
         for msg in messages:
             msg_id = msg.get("id")
-            if msg_id and not db.is_message_seen(msg_id):
+            if not msg_id or not db.claim_message_seen(msg_id):
+                continue
+            try:
                 detail = get_message_detail(session["token"], msg_id)
                 parsed = parse_message(msg, detail)
                 await _send_message_to_user(context, user_id, parsed)
-                db.mark_message_seen(msg_id)
                 new_count += 1
+            except Exception:
+                db.unmark_message_seen(msg_id)
+                raise
 
         if new_count == 0:
             await _send_page(
@@ -306,15 +314,7 @@ async def callback_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=_kb_active(),
             )
         else:
-            await _send_page(
-                update,
-                context,
-                user_id,
-                "new_mail",
-                f"Новых писем: <b>{new_count}</b>.\n\n<blockquote>Проверь, возможно там код подтверждения.</blockquote>",
-                reply_markup=_kb_active(),
-                parse_mode="HTML",
-            )
+            await query.answer(f"Новых писем: {new_count}")
     except Exception as e:
         logger.exception("refresh failed: %s", e)
         await _send_page(
@@ -358,6 +358,20 @@ async def callback_delete_mail(update: Update, context: ContextTypes.DEFAULT_TYP
         "delete_success",
         "Готово, почта удалена.\n\n<blockquote>Если понадобится, быстро создадим новую.</blockquote>",
         reply_markup=_kb_no_mail(),
+    )
+
+
+async def callback_home(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = str(update.effective_user.id)
+    await _send_page(
+        update,
+        context,
+        user_id,
+        "start",
+        HELP_TEXT,
+        reply_markup=_keyboard_for_user(user_id),
     )
 
 

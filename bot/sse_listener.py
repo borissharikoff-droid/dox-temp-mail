@@ -43,15 +43,15 @@ def _check_new_messages(user_id: str, token: str, on_new) -> bool:
     any_new = False
     for msg in messages:
         msg_id = msg.get("id")
-        if not msg_id or db.is_message_seen(msg_id):
+        if not msg_id or not db.claim_message_seen(msg_id):
             continue
         try:
             detail = get_message_detail(token, msg_id)
             parsed = parse_message(msg, detail)
             on_new(user_id, msg_id, parsed)
-            db.mark_message_seen(msg_id)
             any_new = True
         except Exception as e:
+            db.unmark_message_seen(msg_id)
             logger.warning("Failed to process message %s: %s", msg_id, e)
     return any_new
 
