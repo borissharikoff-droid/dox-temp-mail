@@ -31,6 +31,10 @@ RATE_LIMIT_GENERAL = 20      # max other actions per minute
 
 # GIF style config (Telegram file_id-based)
 GIF_DEFAULT_FILE_ID = os.environ.get("GIF_DEFAULT_FILE_ID", "")
+GIF_DEFAULT_URL = os.environ.get(
+    "GIF_DEFAULT_URL",
+    "https://media.giphy.com/media/ICOgUNjpvO0PC/giphy.gif",
+)
 GIF_FILE_IDS = {
     "start": os.environ.get("GIF_START_FILE_ID", ""),
     "create_success": os.environ.get("GIF_CREATE_SUCCESS_FILE_ID", ""),

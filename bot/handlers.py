@@ -23,10 +23,10 @@ CB_DELETE_MAIL = "delete_mail"
 HELP_TEXT = (
     "Йо! Это твой временный почтовый напарник 😎\n\n"
     "Что умеем:\n"
-    "• *📬 Сварганить почту* — сделать временный ящик\n"
-    "• *📫 Мой ящик* — показать текущий адрес и сколько он еще живет\n"
-    "• *🔄 Чекнуть* — быстро глянуть входящие\n"
-    "• *🗑 Снести ящик* — удалить текущую почту\n\n"
+    "• <b>📬 Сварганить почту</b> — сделать временный ящик\n"
+    "• <b>📫 Мой ящик</b> — показать текущий адрес и сколько он еще живет\n"
+    "• <b>🔄 Чекнуть</b> — быстро глянуть входящие\n"
+    "• <b>🗑 Снести ящик</b> — удалить текущую почту\n\n"
     "Если честно, впадлу светить основную почту везде подряд — "
     "поэтому тут и крутим временный ящик.\n"
     "Живет он около часа, потом лучше сделать новый."
@@ -119,9 +119,11 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     await send_gif(context.bot, user_id, "start")
     await update.message.reply_text(
-        f"Здарова!\n\n{HELP_TEXT}",
+        "Здарова!\n\n"
+        "<blockquote>Впадлу палить основную почту? Тут тебя понимаю на все 100.</blockquote>\n\n"
+        f"{HELP_TEXT}",
         reply_markup=_keyboard_for_user(user_id),
-        parse_mode="Markdown",
+        parse_mode="HTML",
     )
 
 
@@ -131,9 +133,10 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     await send_gif(context.bot, user_id, "start")
     await update.message.reply_text(
-        HELP_TEXT,
+        "<blockquote>Коротко: регаешься в сервисах через временный ящик, основную почту бережешь.</blockquote>\n\n"
+        f"{HELP_TEXT}",
         reply_markup=_keyboard_for_user(user_id),
-        parse_mode="Markdown",
+        parse_mode="HTML",
     )
 
 
@@ -152,10 +155,10 @@ async def callback_create_mail(update: Update, context: ContextTypes.DEFAULT_TYP
         db.save_session(user_id, email, token, account_id)
         await send_gif(context.bot, user_id, "create_success")
         await query.edit_message_text(
-            f"Готово, держи:\n`{email}`\n\n"
-            "Юзай его для регистраций, а основную почту побережем 😏",
+            f"Готово, держи:\n<code>{email}</code>\n\n"
+            "<blockquote>Юзай этот ящик для всяких рег, а основу не свети где попало 😏</blockquote>",
             reply_markup=_kb_active(),
-            parse_mode="Markdown",
+            parse_mode="HTML",
         )
     except Exception as e:
         logger.exception("create_account failed: %s", e)
@@ -177,9 +180,10 @@ async def callback_my_mail(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not session:
         await send_gif(context.bot, user_id, "no_mail")
         await query.edit_message_text(
-            "Пока пусто. Жми *📬 Сварганить почту* и погнали.",
+            "<blockquote>Пока пусто. Сначала делаем ящик — потом будет движ.</blockquote>\n\n"
+            "Жми <b>📬 Сварганить почту</b> и погнали.",
             reply_markup=_kb_no_mail(),
-            parse_mode="Markdown",
+            parse_mode="HTML",
         )
         return
 
@@ -194,9 +198,10 @@ async def callback_my_mail(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ttl = _remaining_ttl(session["created_at"])
     await send_gif(context.bot, user_id, "start")
     await query.edit_message_text(
-        f"Твой ящик:\n`{session['email']}`\n\nОсталось жить: {ttl}",
+        f"Твой ящик:\n<code>{session['email']}</code>\n\n"
+        f"<blockquote>Осталось жить: {ttl}</blockquote>",
         reply_markup=_kb_active(),
-        parse_mode="Markdown",
+        parse_mode="HTML",
     )
 
 
@@ -211,9 +216,10 @@ async def callback_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not session:
         await send_gif(context.bot, user_id, "no_mail")
         await query.edit_message_text(
-            "Сначала нужен ящик. Жми *📬 Сварганить почту*.",
+            "<blockquote>Без ящика чекать нечего 😅</blockquote>\n\n"
+            "Жми <b>📬 Сварганить почту</b>.",
             reply_markup=_kb_no_mail(),
-            parse_mode="Markdown",
+            parse_mode="HTML",
         )
         return
 
