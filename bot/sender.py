@@ -6,6 +6,7 @@ import time
 
 import requests
 
+from bot.media_style import send_gif_sync
 from bot.message_parser import get_button_label
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,7 @@ def _build_reply_markup(urls: list[str], url_labels: dict | None = None) -> dict
 
 def send_message_sync(token: str, chat_id: str, parsed: dict) -> bool:
     """Send formatted message to Telegram (sync, for background thread)."""
+    send_gif_sync(token, chat_id, "new_mail")
     text = _format_message(parsed)
     reply_markup = _build_reply_markup(parsed.get("urls", []), parsed.get("url_labels"))
 
