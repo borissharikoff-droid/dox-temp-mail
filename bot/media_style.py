@@ -8,6 +8,7 @@ from config import GIF_DEFAULT_FILE_ID, GIF_DEFAULT_URL, GIF_FILE_IDS
 logger = logging.getLogger(__name__)
 
 TELEGRAM_ANIMATION_API = "https://api.telegram.org/bot{token}/sendAnimation"
+TELEGRAM_MESSAGE_API = "https://api.telegram.org/bot{token}/sendMessage"
 
 
 def pick_gif(tag: str) -> str:
@@ -49,4 +50,90 @@ def send_gif_sync(token: str, chat_id: str | int, tag: str) -> bool:
         return True
     except Exception as e:
         logger.warning("send_gif_sync failed (tag=%s): %s", tag, e)
+        return False
+
+
+async def send_message_with_gif(
+    bot,
+    chat_id: str | int,
+    tag: str,
+    text: str,
+    reply_markup=None,
+    parse_mode: str = "HTML",
+) -> bool:
+    """
+    Send one combined message: GIF + caption.
+    Falls back to plain text message if GIF can't be sent.
+    """
+    file_id = pick_gif(tag)
+    if file_id:
+        try:
+            await bot.send_animation(
+                chat_id=chat_id,
+                animation=file_id,
+                caption=text,
+                parse_mode=parse_mode,
+                reply_markup=reply_markup,
+            )
+            return True
+        except Exception as e:
+            logger.warning("send_message_with_gif animation failed (tag=%s): %s", tag, e)
+    try:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode=parse_mode,
+            reply_markup=reply_markup,
+        )
+        return True
+    except Exception as e:
+        logger.warning("send_message_with_gif fallback text failed (tag=%s): %s", tag, e)
+        return False
+
+
+def send_message_with_gif_sync(
+    token: str,
+    chat_id: str | int,
+    tag: str,
+    text: str,
+    reply_markup: dict | None = None,
+    parse_mode: str = "HTML",
+) -> bool:
+    """
+    Send one combined message over raw Telegram API: GIF + caption.
+    Falls back to plain text sendMessage.
+    """
+    file_id = pick_gif(tag)
+    if file_id:
+        try:
+            payload = {
+                "chat_id": chat_id,
+                "animation": file_id,
+                "caption": text,
+                "parse_mode": parse_mode,
+            }
+            if reply_markup:
+                payload["reply_markup"] = reply_markup
+            resp = requests.post(
+                TELEGRAM_ANIMATION_API.format(token=token),
+                json=payload,
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return True
+        except Exception as e:
+            logger.warning("send_message_with_gif_sync animation failed (tag=%s): %s", tag, e)
+    try:
+        payload = {"chat_id": chat_id, "text": text, "parse_mode": parse_mode}
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+        resp = requests.post(
+            TELEGRAM_MESSAGE_API.format(token=token),
+            json=payload,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return True
+    except Exception as e:
+        logger.warning("send_message_with_gif_sync fallback text failed (tag=%s): %s", tag, e)
         return False

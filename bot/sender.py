@@ -4,14 +4,10 @@ import queue
 import threading
 import time
 
-import requests
-
-from bot.media_style import send_gif_sync
+from bot.media_style import send_message_with_gif_sync
 from bot.message_parser import get_button_label
 
 logger = logging.getLogger(__name__)
-
-TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 
 
 def _format_message(parsed: dict) -> str:
@@ -46,29 +42,19 @@ def _build_reply_markup(urls: list[str], url_labels: dict | None = None) -> dict
 
 def send_message_sync(token: str, chat_id: str, parsed: dict) -> bool:
     """Send formatted message to Telegram (sync, for background thread)."""
-    send_gif_sync(token, chat_id, "new_mail")
     text = _format_message(parsed)
     reply_markup = _build_reply_markup(parsed.get("urls", []), parsed.get("url_labels"))
-
-    payload = {
-        "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "Markdown",
-    }
-    if reply_markup:
-        payload["reply_markup"] = reply_markup
-
-    try:
-        resp = requests.post(
-            TELEGRAM_API.format(token=token),
-            json=payload,
-            timeout=10,
-        )
-        resp.raise_for_status()
-        return True
-    except Exception as e:
-        logger.warning("send_message failed: %s", e)
-        return False
+    ok = send_message_with_gif_sync(
+        token=token,
+        chat_id=chat_id,
+        tag="new_mail",
+        text=text,
+        reply_markup=reply_markup,
+        parse_mode="Markdown",
+    )
+    if not ok:
+        logger.warning("send_message failed")
+    return ok
 
 
 def run_sender_thread(msg_queue, bot_token: str):
